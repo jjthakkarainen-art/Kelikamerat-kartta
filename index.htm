@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="UTF-8">
+<title>Kelikamerat – lämpötilat kartalla</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+<style>
+body { margin:0; font-family: system-ui, Arial, sans-serif; }
+#map { height:100vh; }
+.legend { position:absolute; bottom:20px; left:20px; background:white; padding:10px; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.3); font-size:14px; }
+.legend div { margin-bottom:4px; }
+.dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="legend">
+  <strong>Lämpötila</strong><br>
+  <div><span class="dot" style="background:#0033cc"></span>&lt; –10 °C</div>
+  <div><span class="dot" style="background:#3399ff"></span>–10…0 °C</div>
+  <div><span class="dot" style="background:#33cc33"></span>0…+10 °C</div>
+  <div><span class="dot" style="background:#ff9933"></span>+10…+20 °C</div>
+  <div><span class="dot" style="background:#cc0000"></span>&gt; +20 °C</div>
+</div>
+
+<script>
+const map = L.map('map').setView([64.5,26],5);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ attribution:'© OpenStreetMap' }).addTo(map);
+
+const cluster = L.markerClusterGroup();
+map.addLayer(cluster);
+
+function tempColor(t){
+  if(t===null) return '#999';
+  if(t<-10) return '#0033cc';
+  if(t<0) return '#3399ff';
+  if(t<10) return '#33cc33';
+  if(t<20) return '#ff9933';
+  return '#cc0000';
+}
+
+function icon(color){
+  return L.divIcon({ html:`<div style="background:${color};width:14px;height:14px;border-radius:50%"></div>`, iconSize:[14,14], className:'' });
+}
+
+async function load(){
+  const cams = await fetch('cams.json').then(r=>r.json()).then(j=>j.features);
+  const weather = await fetch('weather.json').then(r=>r.json()).then(j=>j.stations);
+
+  function nearestTemp(coords){
+    let best=null,dmin=Infinity;
+    for(const s of weather){
+      const dx=coords[0]-s.geometry.coordinates[0];
+      const dy=coords[1]-s.geometry.coordinates[1];
+      const d=dx*dx+dy*dy;
+      if(d<dmin){ dmin=d; best=s; }
+    }
+    const sensor = best?.sensors.find(x=>x.sensorType==="AIR_TEMPERATURE");
+    return sensor ? sensor.value : null;
+  }
+
+  cams.forEach(cam=>{
+    const [lon,lat]=cam.geometry.coordinates;
+    const temp=nearestTemp([lon,lat]);
+    const popup=`<b>${cam.properties.name}</b><br>${cam.properties.municipality||""}<br><br>🌡️ ${temp!==null ? temp.toFixed(1)+" °C":"ei tietoa"}<br><a href="${cam.properties.presets?.[0]?.imageUrl}" target="_blank">Avaa kelikamerakuva</a>`;
+    cluster.addLayer(L.marker([lat,lon],{icon:icon(tempColor(temp))}).bindPopup(popup));
+  });
+}
+
+load();
+</script>
+</body>
+</html>
